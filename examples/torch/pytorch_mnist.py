@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 import argparse
-
+import time
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -13,6 +13,16 @@ from grace_dl.torch.communicator.allgather import Allgather
 from grace_dl.torch.compressor.topk import TopKCompressor
 from grace_dl.torch.memory.residual import ResidualMemory
 
+from grace_dl.torch.compressor.none import NoneCompressor
+from grace_dl.torch.memory.none import NoneMemory
+
+from grace_dl.torch.compressor.powersgd  import PowerSGDCompressor
+from grace_dl.torch.memory.powersgd import PowerSGDMemory
+
+from grace_dl.torch.compressor.efsignsgd import EFSignSGDCompressor
+from grace_dl.torch.memory.efsignsgd import EFSignSGDMemory
+
+from grace_dl.torch.compressor.qsgd import QSGDCompressor
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -107,7 +117,20 @@ hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # GRACE: compression algorithm.
-grc = Allgather(TopKCompressor(0.3), ResidualMemory(), hvd.size())
+#grc = Allgather(TopKCompressor(0.3), ResidualMemory(), hvd.size())
+
+grc = Allgather(NoneCompressor(0.005), NoneMemory(), hvd.size())
+
+#grc = Allgather(PowerSGDCompressor(), NoneMemory(), hvd.size())
+
+#compressor = PowerSGDCompressor()
+#memory = PowerSGDMemory(q_memory=compressor.q_memory, compress_rank=1)
+#grc = Allgather(compressor, memory, hvd.size())
+#grc = Allgather(PowerSGDCompressor(0.3), NoneMemory(), hvd.size())
+
+#grc = Allgather(EFSignSGDCompressor(0.3), EFSignSGDMemory(lr), hvd.size())
+
+#grc = Allgather(QSGDCompressor(0.005), NoneMemory(), hvd.size())
 
 # Horovod: wrap optimizer with DistributedOptimizer.
 optimizer = hvd.DistributedOptimizer(optimizer, grc, named_parameters=model.named_parameters())
@@ -122,9 +145,14 @@ def train(epoch):
             data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
         output = model(data)
+        torch.cuda.synchronize()
+        forward_time = time.time()
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
+        torch.cuda.synchronize()
+        backward_time = time.time()
+        print("computation time: ", round(backward_time-forward_time, 3))
         if batch_idx % args.log_interval == 0:
             # Horovod: use train_sampler to determine the number of examples in
             # this worker's partition.
@@ -165,7 +193,6 @@ def test():
     if hvd.rank() == 0:
         print('\nTest set: Average loss: {:.4f}, Accuracy: {:.2f}%\n'.format(
             test_loss, 100. * test_accuracy))
-
 
 for epoch in range(1, args.epochs + 1):
     train(epoch)
