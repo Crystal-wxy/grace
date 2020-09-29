@@ -1,6 +1,7 @@
 import torch
 
 from grace_dl.torch import Compressor
+import time
 
 
 class QSGDCompressor(Compressor):
@@ -10,6 +11,8 @@ class QSGDCompressor(Compressor):
         self.quantum_num = quantum_num
 
     def compress(self, tensor, name):
+        torch.cuda.synchronize()
+        start_time = time.time()
         shape = tensor.size()
         tensor = tensor.flatten()
 
@@ -27,13 +30,19 @@ class QSGDCompressor(Compressor):
         tensor_compressed = (new_level * sign).type(torch.int16)
         tensor_compressed = tensor_compressed.type(torch.int8 if self.quantum_num < 128 else torch.half)
         tensor_compressed = tensor_compressed, norm
+        torch.cuda.synchronize()
+        print(tensor.numel(), time.time() - start_time)
 
         return tensor_compressed, shape
 
     def decompress(self, tensor_compressed, shape):
+        torch.cuda.synchronize()
+        start_time = time.time()
         tensor_compressed, norm = tensor_compressed
 
         decode_output = tensor_compressed.type(torch.float32)
         tensor_decompressed = norm / self.quantum_num * decode_output
         tensor_decompressed = tensor_decompressed.view(shape)
+        torch.cuda.synchronize()
+#        print(tensor_compressed.numel(), time.time() - start_time)
         return tensor_decompressed
