@@ -14,6 +14,8 @@ import numpy as np
 
 import horovod.torch as hvd
 from grace_dl.torch.communicator.allgather import Allgather
+from grace_dl.torch.communicator.allreduce import Allreduce
+from grace_dl.torch.communicator.broadcast import Broadcast
 from grace_dl.torch.compressor.topk import TopKCompressor
 from grace_dl.torch.memory.residual import ResidualMemory
 
@@ -27,6 +29,14 @@ from grace_dl.torch.compressor.efsignsgd import EFSignSGDCompressor
 from grace_dl.torch.memory.efsignsgd import EFSignSGDMemory
 
 from grace_dl.torch.compressor.qsgd import QSGDCompressor
+from grace_dl.torch.compressor.onebit import OneBitCompressor
+from grace_dl.torch.compressor.natural import NaturalCompressor
+from grace_dl.torch.compressor.fp16 import FP16Compressor
+from grace_dl.torch.compressor.randomk import RandomKCompressor
+from grace_dl.torch.compressor.signsgd import SignSGDCompressor
+from grace_dl.torch.compressor.signum import SignumCompressor
+from grace_dl.torch.compressor.terngrad import TernGradCompressor
+from grace_dl.torch.compressor.threshold import ThresholdCompressor
 
 # Benchmark settings
 parser = argparse.ArgumentParser(description='PyTorch Synthetic Benchmark',
@@ -105,20 +115,34 @@ hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
 # GRACE: compression algorithm.
-#grc = Allgather(TopKCompressor(0.3), ResidualMemory(), hvd.size())
+#grc = Allgather(TopKCompressor(0.01), ResidualMemory(), hvd.size())
+#grc = Allgather(RandomKCompressor(0.01), ResidualMemory(), hvd.size())
+#grc = Allgather(ThresholdCompressor(0.01), ResidualMemory(), hvd.size())
+#grc = Allgather(FP16Compressor(), ResidualMemory(), hvd.size())
+#grc = Allgather(TernGradCompressor(), ResidualMemory(), hvd.size())
+grc = Allgather(SignumCompressor(0.9), ResidualMemory(), hvd.size())
+#grc = Allgather(SignSGDCompressor(), ResidualMemory(), hvd.size())
+#compressor = OneBitCompressor()
+#memory = EFSignSGDMemory(lr=0.1)
+#memory = ResidualMemory()
+#grc = Broadcast(compressor, memory, hvd.size())
+#grc = Broadcast(EFSignSGDCompressor(lr=0.1), EFSignSGDMemory(lr=0.1), hvd.size())
+#compressor = NaturalCompressor()
+#memory = ResidualMemory()
+#grc = Allreduce(compressor, memory)
 
-grc = Allgather(NoneCompressor(), NoneMemory(), hvd.size())
+#grc = Allgather(NoneCompressor(), NoneMemory(), hvd.size())
 
 #grc = Allgather(PowerSGDCompressor(), NoneMemory(), hvd.size())
 
 #compressor = PowerSGDCompressor()
 #memory = PowerSGDMemory(q_memory=compressor.q_memory, compress_rank=1)
-#grc = Allgather(compressor, memory, hvd.size())
-#grc = Allgather(PowerSGDCompressor(0.3), NoneMemory(), hvd.size())
+#grc = Broadcast(compressor, memory, hvd.size())
+#grc = Broadcast(PowerSGDCompressor(), memory, hvd.size())
 
 #grc = Allgather(EFSignSGDCompressor(0.3), EFSignSGDMemory(lr), hvd.size())
-
-#grc = Allgather(QSGDCompressor(0.005), NoneMemory(), hvd.size())
+#grc = Allgather(NaturalCompressor(), NoneMemory())
+#grc = Allgather(QSGDCompressor(15), NoneMemory(), hvd.size())
 
 # Horovod: wrap optimizer with DistributedOptimizer.
 optimizer = hvd.DistributedOptimizer(optimizer, grc, named_parameters=model.named_parameters())
@@ -139,8 +163,8 @@ def benchmark_step():
     optimizer.step()
     torch.cuda.synchronize()
     backward_time = time.time()
-    print("computation time: ", round(backward_time-forward_time, 3))
-    print("communication time: ", round(time.time()-backward_time, 3))
+#    print("computation time: ", round(backward_time-forward_time, 3))
+ #   print("communication time: ", round(time.time()-backward_time, 3))
 
 def log(s, nl=True):
     if hvd.rank() != 0:
