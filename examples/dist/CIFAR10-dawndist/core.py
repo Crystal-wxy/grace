@@ -200,9 +200,9 @@ def run_batches(model, batches, training, grc=None, optimizer_step=None, stats=N
         stats.append(output)
         if training:
             output['loss'].sum().backward()
-            for index, (name, layer) in enumerate(model.named_parameters()):
-                grad = layer.grad.data
-                new_tensor = grc.step(grad)
+            for index, (name, parameter) in enumerate(model.named_parameters()):
+                grad = parameter.grad.data
+                new_tensor = grc.step(grad, name)
                 grad.copy_(new_tensor)
             optimizer_step()
             model.zero_grad()
@@ -221,7 +221,9 @@ def train_epoch(model, train_batches, test_batches, optimizer_step, timer, grc, 
 
 def train(model, optimizer, train_batches, test_batches, epochs, master_address, rank, grc,
           loggers=(), test_time_in_total=True, timer=None, backend='nccl'):
-    dist.init_process_group(backend=backend, init_method=master_address, world_size=grc.world_size, rank=rank)
+    import datetime
+    dist.init_process_group(backend=backend, init_method=f'tcp://{master_address}:1111',
+                            timeout=datetime.timedelta(seconds=20),world_size=grc.world_size, rank=rank)
     # epsilon = [zeros(layer.numel(), device='cuda') for layer in model.parameters()]
     timer = timer or Timer()
     for epoch in range(epochs):
